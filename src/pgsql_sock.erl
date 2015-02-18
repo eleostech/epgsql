@@ -77,8 +77,11 @@ handle_cast({send, Data}, State) ->
     ok = Mod:send(Sock, Data),
     {noreply, State};
 
-handle_cast({cancel, Pid, Key}, State) ->
-    {ok, {Addr, Port}} = inet:peername(State#state.sock),
+handle_cast({cancel, Pid, Key}, #state{sock = TimedOutSock} = State) ->
+    {ok, {Addr, Port}} = case State#state.mod of
+                             gen_tcp -> inet:peername(TimedOutSock);
+                             ssl -> ssl:peername(TimedOutSock)
+                         end,
     SockOpts = [{active, false}, {packet, raw}, binary],
     {ok, Sock} = gen_tcp:connect(Addr, Port, SockOpts),
     Msg = <<16:?int32, 80877102:?int32, Pid:?int32, Key:?int32>>,
