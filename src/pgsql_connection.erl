@@ -328,6 +328,30 @@ querying({$C, Bin}, State) ->
     notify(State, {complete, Complete}),
     {next_state, querying, State, Timeout};
 
+%% CopyOutResponse
+querying({$H, <<_Format:8, ColumnData/binary>>}, State) ->
+    #state{timeout = Timeout} = State,
+    Columns = decode_copy_columns(ColumnData),
+    notify(State, {columns, Columns}),
+    {next_state, querying, State, Timeout};
+
+%% CopyData
+querying({$d, Data}, State) ->
+    #state{timeout = Timeout} = State,
+    notify(State, {data, Data}),
+    {next_state, querying, State, Timeout};
+
+%% CopyDone
+querying({$c, _}, State) ->
+    #state{timeout = Timeout} = State,
+    {next_state, querying, State, Timeout};
+
+%% CopyFail
+querying({$f, Error}, State) ->
+    #state{timeout = Timeout} = State,
+    notify(State, {data, Error}),
+    {next_state, querying, State, Timeout};
+
 %% EmptyQueryResponse
 querying({$I, _Bin}, State) ->
     #state{timeout = Timeout} = State,
@@ -576,6 +600,18 @@ decode_complete(Bin) ->
         ["FETCH", Rows]        -> {fetch, list_to_integer(Rows)};
         [Type | _Rest]         -> pgsql_sock:lower_atom(Type)
     end.
+
+decode_copy_columns(<<ColumnsCount:?int16, Bin/binary>>) ->
+    decode_copy_column(ColumnsCount, Bin, []).
+
+decode_copy_column(0, _Bin, Columns) ->
+    lists:reverse(Columns);
+decode_copy_column(Count, <<Column:?int16, Rest/binary>>, Columns) ->
+    Type = case Column of
+               0 -> text;
+               1 -> bytea
+           end,
+    decode_copy_column(Count - 1, Rest, [Type|Columns]).
 
 %% encode types
 encode_types(Types) ->
